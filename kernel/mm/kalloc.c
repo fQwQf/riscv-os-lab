@@ -16,12 +16,12 @@
 #include "types.h"
 
 /* 链表节点结构 —— 注意：它"住"在空闲物理页面的最前面 8 字节 */
-struct run {
-  struct run *next;
+struct free_node {
+  struct free_node *next;
 };
 
 /* 空闲物理页链表的头指针（全局变量，初始为 NULL）*/
-static struct run *freelist;
+static struct free_node *free_mem_list;
 
 /* 内核数据段的结束地址，由链接脚本 kernel.ld 定义
  * kalloc 从 end_address 之后开始管理可用内存 */
@@ -41,31 +41,31 @@ extern char end_address[];
 void kinit(void) {
   /* ================================================================
    * TODO [Lab3-任务1-步骤1]：
-   *   将从 end_address 到 PHYSTOP 的全部内存页释放到 freelist。
-   *
-   *   参考代码结构：
-   *     char *p = (char*)PGROUNDUP((uint64)end_address);
-   *     for (; p + PGSIZE <= (char*)PHYSTOP; p += PGSIZE)
-   *         kfree(p);
+   *   将从 end_address 到 PHYSTOP 的全部内存页释放到 free_mem_list。
+   *   要求：起始地址按4KB对齐（使用 PGROUNDUP），每次步进 PGSIZE。
    * ================================================================ */
+  char *p;
+  p = (char *)PGROUNDUP((uint64)end_address);
+  for(; p + PGSIZE <= (char *)PHYSTOP; p += PGSIZE)
+    kfree(p);
 }
 
 /* ================================================================
- * kfree — 回收一个 4KB 物理页面到 freelist
+ * kfree — 回收一个 4KB 物理页面到 free_mem_list
  *
- * 参数：pa — 要回收的物理页面起始地址（必须是 4096 对齐的）
+ * 参数：pa — 要回收的物理页面起始地址（必须是 4096 对齐特）
  *
  * 算法（头插法）：
  *   1. 安全检查：地址必须 4KB 对齐，且在合法范围内
- *   2. 将 pa 强转为 struct run* 指针 r
- *   3. r->next = freelist（新节点指向原来的链表头）
- *   4. freelist = r（链表头更新为新节点）
+ *   2. 将 pa 强转为 struct free_node* 指针 r
+ *   3. r->next = free_mem_list（新节点指向原来的链表头）
+ *   4. free_mem_list = r（链表头更新为新节点）
  *
  * 调试技巧：可先用 memset 把页面填充为 0xAB（垃圾值），
  *           如果内核意外读取到 0xAB 开头的数据，说明用了未初始化的内存。
  * ================================================================ */
 void kfree(void *pa) {
-  struct run *r;
+  struct free_node *r;
 
   /* 安全检查（已提供，无需修改）*/
   if (((uint64)pa % PGSIZE) != 0 || (char *)pa < end_address ||
@@ -78,13 +78,12 @@ void kfree(void *pa) {
 
   /* ================================================================
    * TODO [Lab3-任务1-步骤2]：
-   *   实现头插法，将 pa 插入 freelist 链表头。
-   *
-   *   提示：
-   *     r = (struct run*)pa;
-   *     r->next = freelist;
-   *     freelist = r;
+   *   实现头插法，将 pa 插入 free_mem_list 链表头。
+   *   将 pa 强转为 struct free_node*，使其 next 指向原链表头，再更新链表头。
    * ================================================================ */
+  r = (struct free_node *)pa;
+  r->next = free_mem_list;
+  free_mem_list = r;
 }
 
 /* ================================================================
@@ -93,25 +92,28 @@ void kfree(void *pa) {
  * 返回值：分配到的页面起始地址；若内存耗尽，返回 0（NULL）。
  *
  * 算法：
- *   1. 取 freelist 的链表头节点 r
- *   2. 若 r 不为空，将 freelist 更新为 r->next（摘除链表头）
+ *   1. 取 free_mem_list 的链表头节点 r
+ *   2. 若 r 不为空，将 free_mem_list 更新为 r->next（摘除链表头）
  *   3. 将页面内容清零（安全起见），然后返回 r
  * ================================================================ */
 void *kalloc(void) {
-  struct run *r;
+  struct free_node *r;
 
   /* ================================================================
    * TODO [Lab3-任务1-步骤3]：
-   *   从 freelist 链表头摘出一页并返回。
-   *
-   *   提示：
-   *     r = freelist;
-   *     if (r)
-   *         freelist = r->next;
-   *     if (r)
-   *         memset((char*)r, 0, PGSIZE);  // 清零（可选但推荐）
-   *     return (void*)r;
+   *   从 free_mem_list 链表头摘出一页并返回。
+   *   若链表为空（free_mem_list==0）则内存耗尽，返回0。
+   *   分配成功后建议将页面内容清零，防止信息泄漏。
    * ================================================================ */
+  r = free_mem_list;
+  if (r) {
+    free_mem_list = r->next;
+    /* 清零页面内容：手动循环对齐 8 字节清零 */
+    uint64 *p = (uint64 *)r;
+    for (int i = 0; i < PGSIZE / 8; i++) {
+        p[i] = 0;
+    }
+  }
 
-  return 0; /* 删除这行，替换为上面的逻辑 */
+  return (void *)r;
 }

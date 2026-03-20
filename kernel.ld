@@ -24,6 +24,9 @@ SECTIONS
   }
 
   . = ALIGN(0x1000);
+
+  etext = .;
+
   .rodata : {
     *(.rodata .rodata.*)
   }
@@ -35,9 +38,9 @@ SECTIONS
 
   . = ALIGN(0x1000);
   .bss : {
+    *(.bss .bss.*)
     /* end_address 标记内核数据结束位置，kalloc 从这里开始管理空闲内存（Lab3用） */
     end_address = .;
-    *(.bss .bss.*)
   }
 
   . = ALIGN(0x1000);

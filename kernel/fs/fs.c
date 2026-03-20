@@ -86,8 +86,7 @@ static uint bmap(struct inode *ip, uint bn) {
     if ((addr = ip->addrs[bn]) == 0) {
       /* ================================================================
        * TODO [Lab7-任务2-步骤1]：
-       *   如果这个块还没分配，调用 balloc 分配一个新的磁盘块：
-       *     ip->addrs[bn] = addr = balloc(ip->dev);
+       *   这个块尚未分配，调用 balloc 分配一个新磁盘块并将其块号写入 ip->addrs[bn]。
        * ================================================================ */
     }
     return addr;
@@ -101,8 +100,7 @@ static uint bmap(struct inode *ip, uint bn) {
     if ((addr = ip->addrs[NDIRECT]) == 0) {
       /* ================================================================
        * TODO [Lab7-任务2-步骤2]：
-       *   分配间接指针块：
-       *     ip->addrs[NDIRECT] = addr = balloc(ip->dev);
+       *   分配间接指针块本身：同样调用 balloc，将块号写入 ip->addrs[NDIRECT]。
        * ================================================================ */
     }
 
@@ -114,9 +112,8 @@ static uint bmap(struct inode *ip, uint bn) {
     if ((addr = a[bn]) == 0) {
       /* ================================================================
        * TODO [Lab7-任务2-步骤3]：
-       *   分配实际数据块，并写回间接指针块：
-       *     a[bn] = addr = balloc(ip->dev);
-       *     bwrite(bp);  // 将修改刷回磁盘（或日志）
+       *   分配实际数据块，将其块号写入间接块并将间接块写回磁盘。
+       *   注意：修改间接块后必须显式调用 bwrite(bp) 将其刷回磁盘！
        * ================================================================ */
     }
     brelse(bp);
@@ -159,13 +156,9 @@ int readi(struct inode *ip, int user_dst, uint64 dst, uint off, uint n) {
 
     /* ================================================================
      * TODO [Lab7-任务2-步骤4]：
-     *   将 bp->data 中从 (off % BSIZE) 开始的 m 字节
-     *   拷贝到目标地址 dst。
-     *
-     *   简化版（不区分用户/内核地址）：
-     *     memcpy((void*)dst, bp->data + off % BSIZE, m);
-     *
-     *   完整版（区分用户态和内核态的地址空间）需要使用 copyout()。
+     *   将 bp->data 中从 (off % BSIZE) 开始的 m 字节拷贝到目标地址 dst。
+     *   简化版：memcpy((void*)dst, bp->data + off % BSIZE, m)。
+     *   完整版需应对用户/内核地址空间差异，使用 copyout()。
      * ================================================================ */
 
     brelse(bp);
@@ -202,14 +195,9 @@ struct inode *dirlookup(struct inode *dp, char *name, uint *poff) {
 
     /* ================================================================
      * TODO [Lab7-任务3]：
-     *   比较 de.name 和 name 是否相同（最多比较 DIRSIZ 个字符）：
-     *     if (strncmp(de.name, name, DIRSIZ) == 0) {
-     *         if (poff) *poff = off;
-     *         inum = de.inum;
-     *         return iget(dp->dev, inum);
-     *     }
-     *
-     *   提示：你需要自己实现 strncmp（或者先实现 strcmp）。
+     *   比较 de.name 和 name 是否相同（最多比较 DIRSIZ 个字符）。
+     *   若匹配：记录偏移到 *poff，调用 iget 获取并返回 inode。
+     *   注意：需要自己实现 strncmp（裸机无标准库）。
      * ================================================================ */
     (void)inum; /* 删除这行占位符 */
   }

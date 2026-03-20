@@ -40,12 +40,9 @@ void timerinit(void) {
 
   /* ================================================================
    * TODO [Lab4-任务4-步骤1]：
-   *   设置下一次时钟中断时刻：mtime + interval。
-   *   CLINT_MTIMECMP(hartid) 是 mtimecmp 寄存器的内存映射地址。
-   *   CLINT_MTIME 是 mtime 寄存器的内存映射地址（只读）。
-   *
-   *   提示：
-   *     *(uint64*)CLINT_MTIMECMP(hartid) = *(uint64*)CLINT_MTIME + interval;
+   *   设置下一次时钟中断时刻：将 mtimecmp 寄存器设置为 mtime + interval。
+   *   CLINT_MTIMECMP(hartid) 和 CLINT_MTIME 均为内存映射地址（见 memlayout.h）。
+   *   通过解引用 uint64* 指针来读写这些寄存器。
    * ================================================================ */
 
   /* 初始化 timer_scratch 暂存区（timervec 汇编代码会用到这里存储中间值）*/
@@ -56,20 +53,20 @@ void timerinit(void) {
 
   /* ================================================================
    * TODO [Lab4-任务4-步骤2]：
-   *   设置 M-Mode 陷阱向量，指向 timervec 汇编入口：
-   *     w_mtvec((uint64)timervec);
+   *   设置 M-Mode 陷阱向量，使 M-Mode 中断发生时跳转到 timervec 入口。
+   *   使用 w_mtvec() 函数写入 mtvec 寄存器（见 riscv.h）。
    * ================================================================ */
 
   /* ================================================================
    * TODO [Lab4-任务4-步骤3]：
-   *   开启 M-Mode 时钟中断使能位：
-   *     w_mie(r_mie() | MIE_MTIE);
+   *   开启 M-Mode 时钟中断使能位（mie.MTIE）。
+   *   使用读-改-写模式：先 r_mie() 读取当前值，按位或上 MIE_MTIE，再 w_mie() 写回。
    * ================================================================ */
 
   /* ================================================================
    * TODO [Lab4-任务4-步骤4]：
-   *   开启 M-Mode 全局中断使能（mstatus.MIE）：
-   *     w_mstatus(r_mstatus() | MSTATUS_MIE);
+   *   开启 M-Mode 全局中断使能（mstatus.MIE）。
+   *   同样使用读-改-写：r_mstatus() | MSTATUS_MIE，写回 w_mstatus()。
    * ================================================================ */
 }
 

@@ -24,6 +24,15 @@
 void start_main() {
   clear_screen(); // 验收：屏幕瞬间变干净！
   printf("Welcome to WHU OS Lab!\n");
+
+  /* ================================================================
+   * Lab3 新增：初始化物理内存与虚拟内存
+   * ================================================================ */
+  kinit();            /* 1. 初始化物理内存分配器 */
+  kvmininit();        /* 2. 建立内核页表（映射内存与外设）*/
+  kvminithart();      /* 3. 开启分页（将页表地址写入 satp 寄存器）*/
+  printf("Memory Management/Paging enabled!\n");
+
   // 验收：这三个特殊的占位符必须被正确解析和打印！
   printf("Kernel loaded at address: %p\n", 0x80000000);
   printf("Signed integer test: %d\n", -123);

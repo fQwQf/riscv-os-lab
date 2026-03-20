@@ -69,8 +69,9 @@ SRCS = \
     kernel/boot/entry.S \
     kernel/driver/uart.c \
     kernel/boot/main.c \
-    kernel/driver/console.c
-#   ^ Lab2 之后包含 console.c
+    kernel/driver/console.c \
+    kernel/mm/kalloc.c \
+    kernel/mm/vm.c
 
 KERNEL  = kernel.elf
 LDSCRIPT = kernel.ld

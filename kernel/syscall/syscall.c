@@ -57,13 +57,5 @@ void syscall(void) {
    *   2. 若合法，调用 syscalls[num]()，
    *      将返回值存入 p->trapframe->a0（用户程序会从 a0 读取返回值）。
    *   3. 若非法，打印错误并将 p->trapframe->a0 = -1（返回错误码）。
-   *
-   *   参考逻辑：
-   *     if (num > 0 && num < NELEM(syscalls) && syscalls[num]) {
-   *         p->trapframe->a0 = syscalls[num]();
-   *     } else {
-   *         printf("unknown syscall: %d\n", num);
-   *         p->trapframe->a0 = -1;
-   *     }
    * ================================================================ */
 }

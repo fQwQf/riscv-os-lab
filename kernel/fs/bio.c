@@ -59,12 +59,7 @@ void binit(void) {
   /* ================================================================
    * TODO [Lab7-任务1-步骤1]：
    *   将 bcache.buf[] 中的每个 buf 逐个插入到链表头部（头插法）。
-   *
-   *   提示（对每个 buf b）：
-   *     b->next = bcache.head.next;
-   *     b->prev = &bcache.head;
-   *     bcache.head.next->prev = b;
-   *     bcache.head.next = b;
+   *   每次头插需要修改 4 个指针：新节点的 prev/next，以及相邻节点的 next/prev。
    * ================================================================ */
   for (b = bcache.buf; b < bcache.buf + NBUF; b++) {
     /* 在这里插入链表 */
@@ -103,7 +98,7 @@ static struct buf *bget(uint dev, uint blockno) {
        *   1. 更新 b->dev 和 b->blockno 为新目标 dev/blockno
        *   2. 将 b->valid 设为 0（旧数据已失效，需要重新从磁盘读）
        *   3. 将 b->refcnt 设为 1（开始被使用）
-       *   4. return b
+       *   4. 返回 b
        * ================================================================ */
       (void)dev;
       (void)blockno;
@@ -124,9 +119,8 @@ struct buf *bread(uint dev, uint blockno) {
     /* 缓存未命中，需要从磁盘真正读取数据 */
     /* ================================================================
      * TODO [Lab7-任务1-步骤3]：
-     *   调用磁盘驱动读取数据：
-     *     virtio_disk_rw(b, 0);  // 0 表示读操作
-     *     b->valid = 1;          // 标记数据已有效
+     *   调用磁盘驱动读取数据，并将 b->valid 标记为 1（数据已有效）。
+     *   使用 virtio_disk_rw(b, 0)：第二个参数 0 表示读操作。
      * ================================================================ */
   }
 
@@ -139,8 +133,8 @@ struct buf *bread(uint dev, uint blockno) {
 void bwrite(struct buf *b) {
   /* ================================================================
    * TODO [Lab7-任务1-步骤4]：
-   *   调用磁盘驱动写入数据：
-   *     virtio_disk_rw(b, 1);  // 1 表示写操作
+   *   调用磁盘驱动将缓冲数据写回磁盘。
+   *   使用 virtio_disk_rw(b, 1)：第二个参数 1 表示写操作。
    * ================================================================ */
   (void)b;
 }
@@ -156,14 +150,10 @@ void bwrite(struct buf *b) {
 void brelse(struct buf *b) {
   /* ================================================================
    * TODO [Lab7-任务1-步骤5]：
-   *   1. b->refcnt-- ;
-   *   2. 若 b->refcnt == 0，将 b 移到 bcache.head 后（链表头部）：
-   *        b->next->prev = b->prev;
-   *        b->prev->next = b->next;
-   *        b->next = bcache.head.next;
-   *        b->prev = &bcache.head;
-   *        bcache.head.next->prev = b;
-   *        bcache.head.next = b;
+   *   1. b->refcnt--
+   *   2. 若 b->refcnt == 0，将 b 从当前位置摘除，重新头插到链表头部：
+   *      摘除操作需修改 4 个指针（b的前据的next、b的后继的prev）；
+   *      头插到 bcache.head 后面同样需要 4 个指针修改。
    * ================================================================ */
   (void)b;
 }

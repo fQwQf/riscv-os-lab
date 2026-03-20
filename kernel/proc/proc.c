@@ -44,15 +44,12 @@ int allocpid(void) { return nextpid++; }
 /* ================================================================
  * procinit — 初始化进程表（内核启动时调用一次）
  *
- * 任务：将进程表中所有条目的状态初始化为 UNUSED。
+ * 任务：将进程表中所有条目的状态初始化为 TASK_FREE。
  * ================================================================ */
 void procinit(void) {
   /* ================================================================
    * TODO [Lab5-任务1-步骤1]：
-   *   遍历 proc[] 数组，将每个进程的 state 置为 UNUSED。
-   *   提示：
-   *     for (int i = 0; i < NPROC; i++)
-   *         proc[i].state = UNUSED;
+   *   遍历 proc[] 数组，将每个进程的 status 置为 TASK_FREE。
    * ================================================================ */
 }
 
@@ -63,16 +60,16 @@ void procinit(void) {
  *
  * 初始化内容：
  *   - 分配 pid
- *   - 将状态从 UNUSED 改为 USED
+ *   - 将状态从 TASK_FREE 改为 TASK_ALLOCATED
  *   - 分配 trapframe 页（用于保存用户寄存器）
  *   - 初始化内核 context（ra 设为某个"进程首次被调度时跳入的地址"）
  * ================================================================ */
 struct proc *allocproc(void) {
   struct proc *p;
 
-  /* 在进程表中寻找一个 UNUSED 的槽位 */
+  /* 在进程表中寻找一个 TASK_FREE 的槽位 */
   for (p = proc; p < &proc[NPROC]; p++) {
-    if (p->state == UNUSED)
+    if (p->status == TASK_FREE)
       goto found;
   }
   return 0; /* 进程表已满 */
@@ -81,15 +78,9 @@ found:
   /* ================================================================
    * TODO [Lab5-任务1-步骤2]：
    *   完成进程初始化：
-   *   1. 分配 pid：p->pid = allocpid();
-   *   2. 分配 trapframe 页（用 kalloc 分配）：
-   *        p->trapframe = (struct trapframe*)kalloc();
-   *        if (p->trapframe == 0) { p->state = UNUSED; return 0; }
-   *   3. 设置进程状态为 USED：p->state = USED;
-   *
-   *   进阶：设置 context.ra，使进程首次被 swtch 切入时
-   *   能跳转到一个统一的"新进程入口包装函数"（如 forkret）。
-   *   这里简化为直接返回，后续 Lab6 实现用户进程时再补。
+   *   1. 分配 pid：调用 allocpid()
+   *   2. 分配 trapframe 页：调用 kalloc()；若失败则将状态恢复为 TASK_FREE 并返回0
+   *   3. 将进程状态设为 TASK_ALLOCATED
    * ================================================================ */
 
   return p;
@@ -99,13 +90,13 @@ found:
  * scheduler — 调度器主循环（永不返回！）
  *
  * 这是操作系统的"上帝"：它在所有进程之间无限轮转，
- * 当看到一个 RUNNABLE 的进程时，就把 CPU 交给它。
+ * 当看到一个 TASK_READY 的进程时，就把 CPU 交给它。
  *
  * 流程：
  *   for 每次循环:
  *     1. 打开全局中断（防止系统无法接收时钟信号而死锁）
- *     2. 遍历进程表，找到 RUNNABLE 的进程
- *     3. 将该进程标记为 RUNNING
+ *     2. 遍历进程表，找到 TASK_READY 的进程
+ *     3. 将该进程标记为 TASK_RUNNING
  *     4. 调用 swtch，从调度器上下文切换到进程的内核上下文
  *     5. 当进程放弃 CPU（yield/sleep/exit）后，swtch 返回到这里
  *     6. 清除 mycpu()->proc，继续找下一个
@@ -124,13 +115,11 @@ void scheduler(void) {
       /* ================================================================
        * TODO [Lab5-任务3]：
        *   完成调度器核心逻辑：
-       *   1. 检查 p->state == RUNNABLE
-       *   2. 将状态改为 RUNNING：p->state = RUNNING;
+       *   1. 检查 p->status == TASK_READY
+       *   2. 将状态改为 TASK_RUNNING
        *   3. 将 c->proc 设为 p
-       *   4. 调用 swtch 切换到 p 的上下文：
-       *        swtch(&c->context, &p->context);
-       *   5. swtch 返回后（进程放弃了CPU），清零 c->proc：
-       *        c->proc = 0;
+       *   4. 调用 swtch 切换到 p 的上下文：swtch(&c->context, &p->context)
+       *   5. swtch 返回后（进程放弃了CPU），清零 c->proc
        * ================================================================ */
     }
   }
@@ -139,16 +128,15 @@ void scheduler(void) {
 /* ================================================================
  * yield — 当前进程主动放弃 CPU（由时钟中断处理函数调用）
  *
- * 过程：将自己的状态从 RUNNING 改回 RUNNABLE，然后切回调度器。
+ * 过程：将自己的状态从 TASK_RUNNING 改回 TASK_READY，然后切回调度器。
  * ================================================================ */
 void yield(void) {
   struct proc *p = myproc();
 
   /* ================================================================
    * TODO [Lab5-任务4]：
-   *   1. 将进程状态改为 RUNNABLE：p->state = RUNNABLE;
-   *   2. 调用 swtch 切回调度器上下文：
-   *        swtch(&p->context, &mycpu()->context);
+   *   1. 将进程状态改为 TASK_READY
+   *   2. 调用 swtch 切回调度器上下文：swtch(&p->context, &mycpu()->context)
    *
    *   思考：为什么是 "进程 → 调度器" 而不是 "进程A → 进程B" 直接切换？
    * ================================================================ */
