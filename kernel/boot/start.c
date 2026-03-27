@@ -16,6 +16,9 @@
 #include "riscv.h"
 #include "types.h"
 
+/* start_main 在 main.c 中定义，start() 通过 mret 跳入 */
+extern void start_main(void);
+
 /* 时钟中断处理代码的入口（汇编实现），在 M-Mode 触发时调用 */
 extern char timervec[];
 
@@ -39,35 +42,73 @@ void timerinit(void) {
   int interval = 1000000;
 
   /* ================================================================
-   * TODO [Lab4-任务4-步骤1]：
-   *   设置下一次时钟中断时刻：将 mtimecmp 寄存器设置为 mtime + interval。
-   *   CLINT_MTIMECMP(hartid) 和 CLINT_MTIME 均为内存映射地址（见 memlayout.h）。
-   *   通过解引用 uint64* 指针来读写这些寄存器。
+   * 任务4-步骤1：安排第一次时钟中断触发时刻
+   *
+   * 目标：向 CLINT 硬件的 mtimecmp 寄存器写入"当前时间 + 间隔"，
+   *   使定时器在 interval 时钟周期后首次产生 M-Mode 时钟中断。
+   *
+   * 完成前请先思考以下问题：
+   *   - CLINT_MTIME 和 CLINT_MTIMECMP(hartid) 是什么类型的地址？
+   *     （见 kernel/include/memlayout.h）
+   *   - 为什么要用 (uint64*) 指针解引用来读写，而不是普通变量赋值？
+   *   - 为什么每个 CPU 核心（hartid）需要独立的 mtimecmp？
+   * CLINT_MTIME      是 mtime 寄存器的内存映射地址（uint64* 指针）
+   * CLINT_MTIMECMP(h) 是第 h 个 hart 的 mtimecmp 内存映射地址
+   * 写入“当前时间 + 间隔”，即让定时器在 interval 周期后首次触发
    * ================================================================ */
+  *(uint64*)CLINT_MTIMECMP(hartid) = *(uint64*)CLINT_MTIME + interval;
 
-  /* 初始化 timer_scratch 暂存区（timervec 汇编代码会用到这里存储中间值）*/
+  /* 初始化 timer_scratch 暂存区（此段代码已提供，无需修改）
+   * timervec 汇编在 M-Mode 处理时，通过 mscratch 找到此数组：
+   *   scratch[3] = CLINT_MTIMECMP(hartid) 的地址
+   *   scratch[4] = 时钟间隔值
+   * timervec 用这两个值来安排下一次中断时刻（mtimecmp += interval）*/
   uint64 *scratch = &timer_scratch[hartid][0];
-  scratch[3] = CLINT_MTIMECMP(hartid); /* mtimecmp 寄存器地址 */
-  scratch[4] = interval;               /* 时钟间隔值 */
-  w_mscratch((uint64)scratch);         /* 将暂存区地址写入 mscratch */
+  scratch[3] = CLINT_MTIMECMP(hartid);
+  scratch[4] = interval;
+  w_mscratch((uint64)scratch);
 
   /* ================================================================
-   * TODO [Lab4-任务4-步骤2]：
-   *   设置 M-Mode 陷阱向量，使 M-Mode 中断发生时跳转到 timervec 入口。
-   *   使用 w_mtvec() 函数写入 mtvec 寄存器（见 riscv.h）。
+   * 任务4-步骤2：注册 M-Mode 时钟中断的汇编处理入口
+   *
+   * 目标：将 timervec（M-Mode 专用汇编处理程序）的地址写入
+   *   M-Mode 陷阱向量寄存器，使时钟中断到来时直接跳转到 timervec。
+   *
+   * 完成前请先思考：
+   *   - M-Mode 的陷阱向量用哪个 CSR 寄存器？是 mtvec 还是 stvec？
+   *     （查看 kernel/include/riscv.h 中的 w_mtvec）
+   *   - timervec 已在文件顶部声明，如何将标签地址转为 uint64？
+   * M-Mode 使用 mtvec（而非 stvec）作为陷阱向量寄存器。
+   * timervec 是 M-Mode 下收到时钟中断时应跳入的汇编代码。
    * ================================================================ */
+  w_mtvec((uint64)timervec);
 
   /* ================================================================
-   * TODO [Lab4-任务4-步骤3]：
-   *   开启 M-Mode 时钟中断使能位（mie.MTIE）。
-   *   使用读-改-写模式：先 r_mie() 读取当前值，按位或上 MIE_MTIE，再 w_mie() 写回。
+   * 任务4-步骤3：使能 M-Mode 时钟中断
+   *
+   * 目标：打开 mie 寄存器的 MTIE 位，允许 M-Mode 接收 CLINT 时钟中断。
+   *
+   * 完成前请先思考：
+   *   - 若不设置 MTIE，即使 mtimecmp 到达，CPU 会有何反应？
+   *   - 为何必须使用"读-改-写"模式（r_mie() | MIE_MTIE），不能直接赋值？
+   *     （MIE_MTIE 常量见 kernel/include/riscv.h）
+   * mie.MTIE（bit 7）是 M-Mode 时钟中断的指定使能开关。
+   * 使用“读-改-写”模式保护其他中断使能位。
    * ================================================================ */
+  w_mie(r_mie() | MIE_MTIE);
 
   /* ================================================================
-   * TODO [Lab4-任务4-步骤4]：
-   *   开启 M-Mode 全局中断使能（mstatus.MIE）。
-   *   同样使用读-改-写：r_mstatus() | MSTATUS_MIE，写回 w_mstatus()。
+   * 任务4-步骤4：开启 M-Mode 全局中断总开关
+   *
+   * 目标：打开 mstatus 寄存器的 MIE 位，这是 M-Mode 接收一切中断的总开关。
+   *
+   * 完成前请先思考：
+   *   - mstatus.MIE 与 mie.MTIE 是什么关系？两者都需要设置吗？
+   *   - MSTATUS_MIE 常量在 riscv.h 中对应哪个 bit？
+   * mstatus.MIE（bit 3）是 M-Mode 下一切中断的总开关，
+   * 不打开则所有 M-Mode 中断均被屏蔽（包括已设定的 MTIE）。
    * ================================================================ */
+  w_mstatus(r_mstatus() | MSTATUS_MIE);
 }
 
 /* ================================================================
@@ -95,6 +136,16 @@ void start(void) {
 
   /* 在 S-Mode 中开启时钟中断和软件中断的使能位 */
   w_sie(r_sie() | SIE_SEIE | SIE_STIE | SIE_SSIE);
+
+  /* 配置 PMP：允许 S-Mode 访问所有物理内存
+   * 若不配置，S-Mode 在 mret 后无法访问任何内存地址，立即崩溃。
+   * pmpaddr0 = 全 1 表示覆盖整个地址空间
+   * pmpcfg0 = 0xf 表示 R/W/X 权限 + NAPOT 匹配模式 */
+  w_pmpaddr0(0x3fffffffffffffull);
+  w_pmpcfg0(0xf);
+
+  /* 确保 S-Mode 下分页关闭（mret 后由 start_main 调用 kvminithart 开启）*/
+  w_satp(0);
 
   /* 初始化 M-Mode 定时器 */
   timerinit();

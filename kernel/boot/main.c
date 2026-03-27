@@ -20,9 +20,10 @@
  * ============================================================= */
 
 #include "defs.h"
+#include "riscv.h"
 
 void start_main() {
-  clear_screen(); // 验收：屏幕瞬间变干净！
+  clear_screen();
   printf("Welcome to WHU OS Lab!\n");
 
   /* ================================================================
@@ -31,13 +32,20 @@ void start_main() {
   kinit();            /* 1. 初始化物理内存分配器 */
   kvmininit();        /* 2. 建立内核页表（映射内存与外设）*/
   kvminithart();      /* 3. 开启分页（将页表地址写入 satp 寄存器）*/
-  printf("Memory Management/Paging enabled!\n");
 
-  // 验收：这三个特殊的占位符必须被正确解析和打印！
-  printf("Kernel loaded at address: %p\n", 0x80000000);
-  printf("Signed integer test: %d\n", -123);
-  printf("String test: %s\n", "Hello, Variadic Parameters!");
+  /* ================================================================
+   * Lab4 新增：注册陷阱向量并开启中断
+   * ================================================================ */
+  trapinithart();     /* 4. 注册 S-Mode 陷阱向量 */
+  uartinit();         /* 5. 初始化 UART 硬件（使能接收中断）*/
+  plicinit();         /* 6. 配置 PLIC 中断优先级（全局）*/
+  plicinithart();     /* 7. 配置本核心的 PLIC 使能和阈值 */
+  intr_on();          /* 8. 开启 S-Mode 全局中断 */
+
+  clear_screen();
+  printf("Paging enabled! Interrupts on.\n");
 
   while (1)
     ; /* 内核死循环，不要删除 */
 }
+

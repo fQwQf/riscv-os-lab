@@ -172,6 +172,19 @@ static inline uint64 r_mhartid() {
   return x;
 }
 
+/* 机器态临时寄存器 mscratch：M-Mode 陷阱处理时的暂存指针 */
+static inline void w_mscratch(uint64 x) {
+  asm volatile("csrw mscratch, %0" : : "r"(x));
+}
+
+/* PMP（物理内存保护）寄存器：控制 S/U-Mode 可访问的物理内存范围 */
+static inline void w_pmpaddr0(uint64 x) {
+  asm volatile("csrw pmpaddr0, %0" : : "r"(x));
+}
+static inline void w_pmpcfg0(uint64 x) {
+  asm volatile("csrw pmpcfg0, %0" : : "r"(x));
+}
+
 /* 线程指针寄存器 tp：在本实验框架中用来存当前 hartid，方便 mycpu() 使用 */
 static inline uint64 r_tp() {
   uint64 x;

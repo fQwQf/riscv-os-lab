@@ -71,7 +71,10 @@ SRCS = \
     kernel/boot/main.c \
     kernel/driver/console.c \
     kernel/mm/kalloc.c \
-    kernel/mm/vm.c
+    kernel/mm/vm.c \
+    kernel/boot/start.c \
+    kernel/trap/kernelvec.S \
+    kernel/trap/trap.c
 
 KERNEL  = kernel.elf
 LDSCRIPT = kernel.ld

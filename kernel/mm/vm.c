@@ -166,6 +166,9 @@ void kvmininit(void) {
    * ================================================================ */
   mappages(kernel_pagetable, UART0, UART0, PGSIZE, PTE_R | PTE_W);
 
+  /* Lab4 进阶：映射 PLIC 中断控制器（0x0c000000 ~ 0x10000000）*/
+  mappages(kernel_pagetable, PLIC, PLIC, 0x400000, PTE_R | PTE_W);
+
   /* ================================================================
    * TODO [Lab3-任务4-步骤2]：
    *   映射内核代码段：从 KERNBASE 到 etext。

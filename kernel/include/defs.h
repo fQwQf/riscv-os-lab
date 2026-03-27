@@ -19,6 +19,7 @@ struct dirent;
  * Lab1 新增：uart 串口驱动
  * 文件：kernel/driver/uart.c
  * ====================================================== */
+void uartinit(void);
 void uart_putc(char c);
 void uart_puts(char *s);
 
@@ -61,6 +62,8 @@ void timerinit(void);
  * 文件：kernel/trap/trap.c
  * ====================================================== */
 void trapinithart(void);
+void plicinit(void);
+void plicinithart(void);
 void kerneltrap(void);
 void usertrap(void);
 void usertrapret(void);
