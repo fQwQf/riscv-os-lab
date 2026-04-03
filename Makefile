@@ -74,7 +74,9 @@ SRCS = \
     kernel/mm/vm.c \
     kernel/boot/start.c \
     kernel/trap/kernelvec.S \
-    kernel/trap/trap.c
+    kernel/trap/trap.c \
+    kernel/proc/proc.c \
+    kernel/proc/swtch.S
 
 KERNEL  = kernel.elf
 LDSCRIPT = kernel.ld

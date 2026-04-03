@@ -5,6 +5,8 @@
  *   - allocproc()  : 为新进程分配 PCB
  *   - scheduler()  : 调度器主循环（无限轮询、找到就绪进程就运行）
  *   - yield()      : 当前进程主动放弃 CPU（配合时钟中断使用）
+ *   - userinit()   : 创建第一个用户态进程 proczero（Lab5 任务B）
+ *   - forkret()    : 进程首次被调度时的"出生之地"（Lab5 任务B）
  */
 
 #include "proc.h"
@@ -20,6 +22,23 @@ struct cpu cpus[NCPU];
 
 /* 进程 ID 计数器（每次 allocpid 返回后递增）*/
 static int nextpid = 1;
+
+/* 内核页表（定义在 vm.c 中）*/
+extern pagetable_t kernel_pagetable;
+
+/* proczero 用户态程序的机器码（Task D）：
+ *   ecall           → 0x00000073  第一次系统调用
+ *   ecall           → 0x00000073  第二次系统调用
+ *   j .  (死循环)   → 0x0000006f
+ */
+static uint8 proczero_code[] = {
+  0x73, 0x00, 0x00, 0x00, // ecall
+  0x73, 0x00, 0x00, 0x00, // ecall
+  0x6f, 0x00, 0x00, 0x00, // j .
+};
+
+/* 前向声明 */
+void forkret(void);
 
 /* ================================================================
  * mycpu — 获取当前 CPU 核心的 cpu 结构指针
@@ -47,10 +66,10 @@ int allocpid(void) { return nextpid++; }
  * 任务：将进程表中所有条目的状态初始化为 TASK_FREE。
  * ================================================================ */
 void procinit(void) {
-  /* ================================================================
-   * TODO [Lab5-任务1-步骤1]：
-   *   遍历 proc[] 数组，将每个进程的 status 置为 TASK_FREE。
-   * ================================================================ */
+  struct proc *p;
+  for (p = proc; p < &proc[NPROC]; p++) {
+    p->status = TASK_FREE;
+  }
 }
 
 /* ================================================================
@@ -62,7 +81,7 @@ void procinit(void) {
  *   - 分配 pid
  *   - 将状态从 TASK_FREE 改为 TASK_ALLOCATED
  *   - 分配 trapframe 页（用于保存用户寄存器）
- *   - 初始化内核 context（ra 设为某个"进程首次被调度时跳入的地址"）
+ *   - 初始化内核 context（ra 设为 forkret）
  * ================================================================ */
 struct proc *allocproc(void) {
   struct proc *p;
@@ -75,15 +94,124 @@ struct proc *allocproc(void) {
   return 0; /* 进程表已满 */
 
 found:
-  /* ================================================================
-   * TODO [Lab5-任务1-步骤2]：
-   *   完成进程初始化：
-   *   1. 分配 pid：调用 allocpid()
-   *   2. 分配 trapframe 页：调用 kalloc()；若失败则将状态恢复为 TASK_FREE 并返回0
-   *   3. 将进程状态设为 TASK_ALLOCATED
-   * ================================================================ */
+  /* 1. 分配 pid */
+  p->pid = allocpid();
+
+  /* 2. 分配 trapframe 页 */
+  p->trapframe = (struct trapframe *)kalloc();
+  if (p->trapframe == 0) {
+    p->status = TASK_FREE;
+    return 0;
+  }
+
+  /* 3. 将进程状态设为 TASK_ALLOCATED */
+  p->status = TASK_ALLOCATED;
+
+  /* 4. 初始化 context：清零后设置 ra = forkret */
+  /* 清零 context */
+  uint64 *ctx = (uint64 *)&p->context;
+  for (int i = 0; i < sizeof(struct context) / 8; i++)
+    ctx[i] = 0;
+
+  /* ra 设为 forkret，使得第一次 swtch 返回时跳到 forkret */
+  p->context.ra = (uint64)forkret;
 
   return p;
+}
+
+/* ================================================================
+ * forkret — 进程首次被调度时的"出生之地"（Task B）
+ *
+ * 当 scheduler() 通过 swtch() 第一次切换到新进程时，
+ * CPU 执行的第一个函数就是 forkret()。
+ *
+ * 它的职责：调用 usertrapret() 完成从 S-Mode 到 U-Mode 的切换。
+ *
+ * 为什么需要 forkret 而不是直接设置 context.ra = usertrapret？
+ * 因为 scheduler() 在调用 swtch() 之前可能持有某些资源（如锁），
+ * forkret 可以在此处释放这些资源，确保安全地进入用户态。
+ * ================================================================ */
+void forkret(void) {
+  /* 调用 usertrapret() 完成 S→U 的最后一步 */
+  usertrapret();
+}
+
+/* ================================================================
+ * userinit — 创建第一个用户态进程 proczero（Task B）
+ *
+ * 这是系统启动时创建的第一个进程。它的用户代码是
+ * proczero_code[] 字节数组中嵌入的机器码。
+ * ================================================================ */
+void userinit(void) {
+  struct proc *p;
+
+  /* 1. 调用 allocproc() 获取已初始化基础字段的 PCB */
+  p = allocproc();
+  if (p == 0)
+    panic("userinit: allocproc failed");
+
+  /* 2. 分配内核栈 */
+  p->kstack = (uint64)kalloc();
+  if (p->kstack == 0)
+    panic("userinit: kalloc kstack failed");
+  /* 栈从高地址向低地址生长，sp 初始化为栈顶（高地址端） */
+  p->context.sp = p->kstack + PGSIZE;
+
+  /* 3. 为用户代码分配物理内存，拷贝 proczero_code，建立页表映射 */
+  void *user_code_page = kalloc();
+  if (user_code_page == 0)
+    panic("userinit: kalloc user code failed");
+
+  /* 拷贝用户代码到新分配的页 */
+  uint8 *dst = (uint8 *)user_code_page;
+  for (int i = 0; i < (int)sizeof(proczero_code); i++)
+    dst[i] = proczero_code[i];
+
+  /* 这些页已经被 kvmininit() 恒等映射过了（PTE_R|PTE_W），
+   * 不能再次 mappages（会触发 remap panic）。
+   * 改为用 walk() 找到已有的 PTE，追加 PTE_U 和 PTE_X 权限位。 */
+  pte_t *pte = walk(kernel_pagetable, (uint64)user_code_page, 0);
+  if (pte == 0)
+    panic("userinit: walk user code failed");
+  *pte |= PTE_X | PTE_U;
+
+  /* 4. 为用户栈分配物理内存，添加 PTE_U 权限 */
+  void *user_stack_page = kalloc();
+  if (user_stack_page == 0)
+    panic("userinit: kalloc user stack failed");
+
+  pte = walk(kernel_pagetable, (uint64)user_stack_page, 0);
+  if (pte == 0)
+    panic("userinit: walk user stack failed");
+  *pte |= PTE_U;
+
+  /* 5. 初始化 trapframe */
+  /* 清零 trapframe */
+  uint64 *tf = (uint64 *)p->trapframe;
+  for (int i = 0; i < PGSIZE / 8; i++)
+    tf[i] = 0;
+
+  /* epc = 用户代码入口地址（恒等映射，物理地址 = 虚拟地址） */
+  p->trapframe->epc = (uint64)user_code_page;
+  /* sp = 用户栈顶（栈页的最高地址） */
+  p->trapframe->sp = (uint64)user_stack_page + PGSIZE;
+
+  /* 6. 设置进程元信息 */
+  p->pagetable = kernel_pagetable;
+  p->sz = PGSIZE * 2; /* 用户代码页 + 用户栈页 */
+
+  /* 设置进程名称 */
+  char *name = "proczero";
+  int i;
+  for (i = 0; name[i] && i < 15; i++)
+    p->name[i] = name[i];
+  p->name[i] = 0;
+
+  /* 将状态设为 TASK_READY，允许调度器选中 */
+  p->status = TASK_READY;
+
+  printf("userinit: proczero created (pid=%d, epc=%p, sp=%p)\n",
+         p->pid, p->trapframe->epc, p->trapframe->sp);
 }
 
 /* ================================================================
@@ -91,15 +219,6 @@ found:
  *
  * 这是操作系统的"上帝"：它在所有进程之间无限轮转，
  * 当看到一个 TASK_READY 的进程时，就把 CPU 交给它。
- *
- * 流程：
- *   for 每次循环:
- *     1. 打开全局中断（防止系统无法接收时钟信号而死锁）
- *     2. 遍历进程表，找到 TASK_READY 的进程
- *     3. 将该进程标记为 TASK_RUNNING
- *     4. 调用 swtch，从调度器上下文切换到进程的内核上下文
- *     5. 当进程放弃 CPU（yield/sleep/exit）后，swtch 返回到这里
- *     6. 清除 mycpu()->proc，继续找下一个
  * ================================================================ */
 void scheduler(void) {
   struct proc *p;
@@ -112,15 +231,16 @@ void scheduler(void) {
     intr_on();
 
     for (p = proc; p < &proc[NPROC]; p++) {
-      /* ================================================================
-       * TODO [Lab5-任务3]：
-       *   完成调度器核心逻辑：
-       *   1. 检查 p->status == TASK_READY
-       *   2. 将状态改为 TASK_RUNNING
-       *   3. 将 c->proc 设为 p
-       *   4. 调用 swtch 切换到 p 的上下文：swtch(&c->context, &p->context)
-       *   5. swtch 返回后（进程放弃了CPU），清零 c->proc
-       * ================================================================ */
+      if (p->status == TASK_READY) {
+        /* 将状态改为 TASK_RUNNING */
+        p->status = TASK_RUNNING;
+        /* 设置当前 CPU 运行的进程 */
+        c->proc = p;
+        /* 切换到进程的内核上下文 */
+        swtch(&c->context, &p->context);
+        /* swtch 返回后（进程放弃了CPU），清零 c->proc */
+        c->proc = 0;
+      }
     }
   }
 }
@@ -133,11 +253,8 @@ void scheduler(void) {
 void yield(void) {
   struct proc *p = myproc();
 
-  /* ================================================================
-   * TODO [Lab5-任务4]：
-   *   1. 将进程状态改为 TASK_READY
-   *   2. 调用 swtch 切回调度器上下文：swtch(&p->context, &mycpu()->context)
-   *
-   *   思考：为什么是 "进程 → 调度器" 而不是 "进程A → 进程B" 直接切换？
-   * ================================================================ */
+  /* 将进程状态改为 TASK_READY */
+  p->status = TASK_READY;
+  /* 切回调度器上下文 */
+  swtch(&p->context, &mycpu()->context);
 }

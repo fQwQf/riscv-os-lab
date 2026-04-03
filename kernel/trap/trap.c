@@ -11,6 +11,7 @@
 #include "defs.h"
 #include "memlayout.h"
 #include "param.h"
+#include "proc.h"
 #include "riscv.h"
 #include "types.h"
 
@@ -130,6 +131,9 @@ void sys_trap_handler(void) {
       ticks++;
       if (ticks % 10 == 0)
         printf("Tick! (%ld)\n", ticks);
+      
+      if (myproc() != 0 && myproc()->status == TASK_RUNNING)
+        yield();
       break;
 
     case 9: {
@@ -188,6 +192,8 @@ void sys_trap_handler(void) {
  *   - 需要将 epc 加 4，跳过 ecall 指令（否则返回后又会执行 ecall）
  *   - 只处理 scause == 8（来自 U-Mode 的 ecall）
  * ================================================================ */
+void usertrap(void) __attribute__((aligned(4)));
+
 void usertrap(void) {
   /* 立即切换到内核态陷阱向量（防止处理用户陷阱时再发生用户态中断）*/
   w_stvec((uint64)sys_trap_vector);
@@ -196,24 +202,83 @@ void usertrap(void) {
 
   if (cause == 8) {
     /* 来自 U-Mode 的 ecall（系统调用）*/
+    struct proc *p = myproc();
 
     /* 允许中断（系统调用可能涉及耗时 I/O 操作）*/
     intr_on();
 
-    /* ================================================================
-     * TODO [Lab6-任务2]：
-     *   将被打断的 PC（sepc）向后移动 4 字节，跳过 ecall 指令。
-     *   需要通过 myproc()->trapframe->epc 访问该字段并对其加 4。
-     *   如不执行此步，返回后用户态会无限重复执行 ecall！
-     * ================================================================ */
+    /* 跳过 ecall 指令 */
+    p->trapframe->epc += 4;
+    printf("syscall from proczero (pid=%d)\n", p->pid);
 
-    /* 分发给系统调用处理函数（Lab6 实现）*/
-    // syscall();
+    usertrapret();
+  } else if (cause == 0x8000000000000001L) {
+    /* 软件中断 / 时钟信号 */
+    w_sip(r_sip() & ~2);
+    ticks++;
+    if (ticks % 10 == 0)
+      printf("Tick! (%ld)\n", ticks);
+    
+    if (myproc() != 0 && myproc()->status == TASK_RUNNING)
+      yield();
+    
+    usertrapret();
+  } else if (cause == 0x8000000000000009L) {
+    /* 外部中断（键盘输入/UART 等） */
+    int hart = 0;
+    uint32 irq_id = *(uint32*)PLIC_SCLAIM(hart);  /* Claim */
 
+    if (irq_id == UART0_IRQ) {
+      /* 从 UART0 的 RHR 读取输入字节并回显 */
+      char c = *(volatile char*)UART0;
+      if (c != 0) {
+        uart_putc(c);
+      }
+    } else if (irq_id != 0) {
+      printf("usertrap: unexpected external interrupt irq=%d\n", irq_id);
+    }
+
+    if (irq_id != 0)
+      *(uint32*)PLIC_SCLAIM(hart) = irq_id;  /* Complete */
+    
+    usertrapret();
   } else {
     /* 用户态发生异常（如非法内存访问），直接终止该进程 */
-    printf("usertrap: unexpected scause=%ld\n", cause);
-    /* 理想情况下应该 exit(-1) 杀死该进程，暂不实现 */
+    printf("usertrap: unexpected scause=%ld, sepc=%p, stval=%p\n", cause, r_sepc(), r_stval());
     panic("usertrap");
   }
+}
+
+/* ================================================================
+ * usertrapret — 从 S-Mode 返回 U-Mode（Lab5 新增）
+ * ================================================================ */
+void usertrapret(void) {
+  struct proc *p = myproc();
+
+  /* 关闭中断：防止在配置间隙发生中断 */
+  intr_off();
+
+  /* 切换 stvec 到用户态陷阱入口。在简化实现中，直接指向 usertrap。 */
+  w_stvec((uint64)usertrap);
+
+  /* 填充 trapframe 的内核信息字段 */
+  p->trapframe->kernel_sp = p->kstack + PGSIZE;
+  p->trapframe->kernel_trap = (uint64)usertrap;
+
+  /* 配置 sstatus */
+  uint64 x = r_sstatus();
+  x &= ~SSTATUS_SPP; /* 清除 SPP 位（进入 U-Mode） */
+  x |= SSTATUS_SPIE; /* 设置 SPIE，使能用户态中断 */
+  w_sstatus(x);
+
+  /* 设置 sepc = 用户程序起始地址 */
+  w_sepc(p->trapframe->epc);
+
+  /* 设置 sp = 用户栈，并执行 sret：切换到 U-Mode，PC 跳到 sepc */
+  uint64 sp = p->trapframe->sp;
+  asm volatile (
+    "mv sp, %0\n"
+    "sret\n"
+    : : "r" (sp) : "memory"
+  );
 }

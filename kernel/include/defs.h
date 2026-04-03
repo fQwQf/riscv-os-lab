@@ -73,6 +73,7 @@ void usertrapret(void);
  * 文件：kernel/proc/proc.c
  * ====================================================== */
 void procinit(void);
+void userinit(void);
 struct proc *myproc(void);
 int allocpid(void);
 struct proc *allocproc(void);

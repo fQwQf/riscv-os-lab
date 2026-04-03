@@ -45,7 +45,8 @@ void start_main() {
   clear_screen();
   printf("Paging enabled! Interrupts on.\n");
 
-  while (1)
-    ; /* 内核死循环，不要删除 */
+  procinit();
+  userinit();
+  scheduler();
 }
 
