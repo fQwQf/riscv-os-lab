@@ -36,33 +36,48 @@ static char digits[] = "0123456789abcdef";
  *     此时 buf 里的字符是倒序的！要从后往前输出。
  * ================================================================ */
 static void printint(int xx, int base, int sign) {
-  char buf[16]; /* 最多 16 个字符 */
+  char buf[16];
   int i = 0;
   unsigned int x;
 
-  /* 处理有符号数的负数情况 */
   if (sign && xx < 0) {
     x = (unsigned int)(-xx);
-    sign = 1; /* 记录需要输出负号 */
+    sign = 1;
   } else {
     x = (unsigned int)xx;
     sign = 0;
   }
 
-  /* ================================================================
-   * TODO [Lab2-任务1-步骤2-A]：
-   *   实现 do-while 循环，将 x 按 base 进制逐位存入 buf。
-   *   每次循环：
-   *     buf[i++] = digits[x % base];
-   *     x = x / base;
-   *   直到 x == 0 为止。
-   * ================================================================ */
   do {
     buf[i++] = digits[x % base];
     x /= base;
   } while (x != 0);
 
-  /* 如果原数是负数，在缓冲区末尾补充负号 */
+  if (sign)
+    buf[i++] = '-';
+
+  while (--i >= 0)
+    uart_putc(buf[i]);
+}
+
+static void printlong(long xx, int base, int sign) {
+  char buf[20];
+  int i = 0;
+  unsigned long x;
+
+  if (sign && xx < 0) {
+    x = (unsigned long)(-xx);
+    sign = 1;
+  } else {
+    x = (unsigned long)xx;
+    sign = 0;
+  }
+
+  do {
+    buf[i++] = digits[x % base];
+    x /= base;
+  } while (x != 0);
+
   if (sign)
     buf[i++] = '-';
 
@@ -119,7 +134,7 @@ void printf(char *fmt, ...) {
       break;
 
     case 'p':
-      printint(va_arg(ap, unsigned long), 16, 0);
+      printlong(va_arg(ap, unsigned long), 16, 0);
       break;
 
     case 's':
@@ -137,8 +152,22 @@ void printf(char *fmt, ...) {
       consputc('%');
       break;
 
+    case 'l':
+      c = fmt[++i] & 0xff;
+      if (c == 'd') {
+        printlong(va_arg(ap, long), 10, 1);
+      } else if (c == 'u') {
+        printlong(va_arg(ap, unsigned long), 10, 0);
+      } else if (c == 'x') {
+        printlong(va_arg(ap, unsigned long), 16, 0);
+      } else {
+        consputc('%');
+        consputc('l');
+        if (c) consputc(c);
+      }
+      break;
+
     default:
-      /* 不认识的格式符，原样输出 */
       consputc('%');
       consputc(c);
       break;

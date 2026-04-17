@@ -113,6 +113,10 @@ struct proc {
   uint64 kstack;               /* 该进程的内核栈顶地址 */
   uint64 sz;                   /* 进程地址空间大小（字节）*/
   char name[16];               /* 进程名称（调试用）*/
+  struct proc *parent;         /* 父进程指针（Lab6：fork/wait/exit）*/
+  void *chan;                  /* 睡眠通道（Lab6：sleep/wakeup）*/
+  int killed;                  /* 被杀标志（Lab6）*/
+  int xstate;                  /* 退出状态码（Lab6：exit/wait）*/
 };
 
 /* CPU 描述结构 */

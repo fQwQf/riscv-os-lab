@@ -67,6 +67,7 @@ void plicinithart(void);
 void kerneltrap(void);
 void usertrap(void);
 void usertrapret(void);
+void return_to_user(uint64 trapframe_addr);
 
 /* ======================================================
  * Lab5 新增：进程管理
@@ -94,6 +95,9 @@ void swtch(struct context *old, struct context *new);
  * 文件：kernel/syscall/syscall.c
  * ====================================================== */
 void syscall(void);
+int argint(int n, int *ip);
+int argaddr(int n, uint64 *ap);
+int argstr(int n, char *buf, int max);
 
 /* ======================================================
  * Lab6 新增：系统调用具体实现
@@ -105,6 +109,14 @@ uint64 sys_fork(void);
 uint64 sys_wait(void);
 uint64 sys_sbrk(void);
 uint64 sys_write(void);
+
+/* ======================================================
+ * Lab6 新增：进程生命周期（fork/exit/wait）
+ * 文件：kernel/proc/proc.c
+ * ====================================================== */
+void exit(int status);
+int wait(uint64 addr);
+int fork(void);
 
 /* ======================================================
  * Lab7 新增：块缓冲层

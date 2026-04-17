@@ -18,6 +18,10 @@
 /* 声明 sys_trap_vector 汇编入口（在 kernelvec.S 中定义）*/
 extern char sys_trap_vector[];
 
+/* 声明用户态陷阱汇编入口（在 kernelvec.S 中定义）*/
+extern char user_trap_entry[];
+extern void return_to_user(uint64 trapframe_addr);
+
 /* ================================================================
  * trapinithart — 设置 S-Mode 陷阱向量
  *
@@ -204,12 +208,13 @@ void usertrap(void) {
     /* 来自 U-Mode 的 ecall（系统调用）*/
     struct proc *p = myproc();
 
-    /* 允许中断（系统调用可能涉及耗时 I/O 操作）*/
+    /* 跳过 ecall 指令，避免 sret 后无限循环 */
+    p->trapframe->epc += 4;
+
     intr_on();
 
-    /* 跳过 ecall 指令 */
-    p->trapframe->epc += 4;
-    printf("syscall from proczero (pid=%d)\n", p->pid);
+    /* 分发系统调用 */
+    syscall();
 
     usertrapret();
   } else if (cause == 0x8000000000000001L) {
@@ -255,30 +260,23 @@ void usertrap(void) {
 void usertrapret(void) {
   struct proc *p = myproc();
 
-  /* 关闭中断：防止在配置间隙发生中断 */
   intr_off();
 
-  /* 切换 stvec 到用户态陷阱入口。在简化实现中，直接指向 usertrap。 */
-  w_stvec((uint64)usertrap);
+  /* stvec 指向用户态陷阱汇编入口 */
+  w_stvec((uint64)user_trap_entry);
 
-  /* 填充 trapframe 的内核信息字段 */
+  /* 填充 trapframe 内核信息 */
   p->trapframe->kernel_sp = p->kstack + PGSIZE;
   p->trapframe->kernel_trap = (uint64)usertrap;
+  p->trapframe->kernel_hartid = r_tp();
+  p->trapframe->kernel_satp = r_satp();
 
-  /* 配置 sstatus */
+  /* 配置 sstatus：SPP=0 返回 U-Mode，SPIE=1 开启用户态中断 */
   uint64 x = r_sstatus();
-  x &= ~SSTATUS_SPP; /* 清除 SPP 位（进入 U-Mode） */
-  x |= SSTATUS_SPIE; /* 设置 SPIE，使能用户态中断 */
+  x &= ~SSTATUS_SPP;
+  x |= SSTATUS_SPIE;
   w_sstatus(x);
 
-  /* 设置 sepc = 用户程序起始地址 */
-  w_sepc(p->trapframe->epc);
-
-  /* 设置 sp = 用户栈，并执行 sret：切换到 U-Mode，PC 跳到 sepc */
-  uint64 sp = p->trapframe->sp;
-  asm volatile (
-    "mv sp, %0\n"
-    "sret\n"
-    : : "r" (sp) : "memory"
-  );
+  /* 通过汇编恢复寄存器并 sret 到用户态 */
+  return_to_user((uint64)p->trapframe);
 }

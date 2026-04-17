@@ -26,16 +26,8 @@ static int nextpid = 1;
 /* 内核页表（定义在 vm.c 中）*/
 extern pagetable_t kernel_pagetable;
 
-/* proczero 用户态程序的机器码（Task D）：
- *   ecall           → 0x00000073  第一次系统调用
- *   ecall           → 0x00000073  第二次系统调用
- *   j .  (死循环)   → 0x0000006f
- */
-static uint8 proczero_code[] = {
-  0x73, 0x00, 0x00, 0x00, // ecall
-  0x73, 0x00, 0x00, 0x00, // ecall
-  0x6f, 0x00, 0x00, 0x00, // j .
-};
+/* proczero 用户程序机器码（由 user/proczero.c 编译生成）*/
+#include "usercode.h"
 
 /* 前向声明 */
 void forkret(void);
@@ -106,6 +98,12 @@ found:
 
   /* 3. 将进程状态设为 TASK_ALLOCATED */
   p->status = TASK_ALLOCATED;
+
+  /* 初始化 Lab6 新增字段 */
+  p->parent = 0;
+  p->chan = 0;
+  p->killed = 0;
+  p->xstate = 0;
 
   /* 4. 初始化 context：清零后设置 ra = forkret */
   /* 清零 context */
@@ -207,6 +205,9 @@ void userinit(void) {
     p->name[i] = name[i];
   p->name[i] = 0;
 
+  /* proczero 是 init 进程，没有父进程 */
+  p->parent = 0;
+
   /* 将状态设为 TASK_READY，允许调度器选中 */
   p->status = TASK_READY;
 
@@ -257,4 +258,151 @@ void yield(void) {
   p->status = TASK_READY;
   /* 切回调度器上下文 */
   swtch(&p->context, &mycpu()->context);
+}
+
+/* ================================================================
+ * sleep — 将当前进程挂起，等待被 wakeup 唤醒
+ * ================================================================ */
+void sleep(void *chan) {
+  struct proc *p = myproc();
+  p->chan = chan;
+  p->status = TASK_SLEEPING;
+  swtch(&p->context, &mycpu()->context);
+  p->chan = 0;
+}
+
+/* ================================================================
+ * wakeup — 唤醒所有在 chan 上等待的进程
+ * ================================================================ */
+void wakeup(void *chan) {
+  struct proc *p;
+  for (p = proc; p < &proc[NPROC]; p++) {
+    if (p != myproc() && p->status == TASK_SLEEPING && p->chan == chan) {
+      p->status = TASK_READY;
+    }
+  }
+}
+
+/* ================================================================
+ * exit — 终止当前进程
+ *
+ * 1. 保存退出码
+ * 2. 将子进程移交 init（pid=1）
+ * 3. 唤醒父进程
+ * 4. 变为 ZOMBIE，切回调度器（永不返回）
+ * ================================================================ */
+void exit(int status) {
+  struct proc *p = myproc();
+
+  p->xstate = status;
+
+  printf("Process %d exited with status %d\n", p->pid, status);
+
+  /* 将子进程移交给 init (pid=1) */
+  struct proc *pp;
+  for (pp = proc; pp < &proc[NPROC]; pp++) {
+    if (pp->parent == p) {
+      pp->parent = &proc[0];
+    }
+  }
+
+  wakeup(p->parent);
+
+  p->status = TASK_ZOMBIE;
+  swtch(&p->context, &mycpu()->context);
+
+  panic("exit: zombie returned");
+}
+
+/* ================================================================
+ * wait — 等待子进程退出，回收其资源
+ *
+ * addr: 用户空间地址，用于写入子进程退出码（0 表示不需要）
+ * 返回: 子进程 pid，或 -1（没有子进程）
+ * ================================================================ */
+int wait(uint64 addr) {
+  struct proc *p = myproc();
+  struct proc *child;
+  int havekids, pid;
+
+  for (;;) {
+    havekids = 0;
+    for (child = proc; child < &proc[NPROC]; child++) {
+      if (child->parent == p) {
+        havekids = 1;
+        if (child->status == TASK_ZOMBIE) {
+          pid = child->pid;
+          if (addr != 0) {
+            /* 恒等映射下直接写入用户地址 */
+            *(int *)addr = child->xstate;
+          }
+          /* 释放子进程资源 */
+          child->status = TASK_FREE;
+          child->pid = 0;
+          child->parent = 0;
+          child->name[0] = 0;
+          if (child->trapframe) {
+            kfree(child->trapframe);
+            child->trapframe = 0;
+          }
+          if (child->kstack) {
+            kfree((void *)child->kstack);
+            child->kstack = 0;
+          }
+          return pid;
+        }
+      }
+    }
+
+    if (!havekids)
+      return -1;
+
+    sleep(p);
+  }
+}
+
+/* ================================================================
+ * fork — 创建子进程（复制当前进程）
+ *
+ * 返回: 父进程得到子进程 pid，子进程得到 0
+ * ================================================================ */
+int fork(void) {
+  struct proc *p = myproc();
+
+  struct proc *np = allocproc();
+  if (np == 0)
+    return -1;
+
+  /* 分配内核栈 */
+  np->kstack = (uint64)kalloc();
+  if (np->kstack == 0) {
+    np->status = TASK_FREE;
+    return -1;
+  }
+  np->context.sp = np->kstack + PGSIZE;
+
+  /* 复制 trapframe */
+  uint64 *dst = (uint64 *)np->trapframe;
+  uint64 *src = (uint64 *)p->trapframe;
+  for (int i = 0; i < PGSIZE / 8; i++)
+    dst[i] = src[i];
+
+  /* 子进程从 fork 返回 0 */
+  np->trapframe->a0 = 0;
+
+  /* 共享内核页表（恒等映射下父子进程共享物理页面）*/
+  np->pagetable = p->pagetable;
+  np->sz = p->sz;
+
+  /* 建立父子关系 */
+  np->parent = p;
+
+  /* 复制进程名 */
+  for (int i = 0; i < 16; i++)
+    np->name[i] = p->name[i];
+
+  /* 子进程就绪 */
+  np->status = TASK_READY;
+
+  return np->pid;
 }

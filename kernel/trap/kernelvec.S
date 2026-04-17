@@ -136,6 +136,175 @@ sys_trap_vector:
     sret
 
 # =============================================================
+# user_trap_entry — 用户态陷阱入口（Lab6 新增）
+#
+# 当用户程序执行 ecall 或在用户态发生中断时，硬件跳到这里。
+# 职责：
+#   1. 将 sscratch 中保存的 trapframe 地址取回
+#   2. 保存所有用户寄存器到 trapframe
+#   3. 切换到内核栈
+#   4. 调用 usertrap() C 函数处理陷阱
+#
+# trapframe 字段偏移量（与 proc.h 中 struct trapframe 对应）：
+#   0=kernel_satp  8=kernel_sp  16=kernel_trap  24=epc  32=kernel_hartid
+#   40=ra  48=sp  56=gp  64=tp  72=t0  80=t1  88=t2
+#   96=s0  104=s1  112=a0  120=a1  128=a2  136=a3  144=a4
+#   152=a5  160=a6  168=a7  176=s2  184=s3  192=s4  200=s5
+#   208=s6  216=s7  224=s8  232=s9  240=s10  248=s11
+#   256=t3  264=t4  272=t5  280=t6
+# =============================================================
+    .globl user_trap_entry
+    .align 4
+user_trap_entry:
+    # 用 csrrw 交换 t0 和 sscratch：
+    # t0 获得 trapframe 地址，sscratch 保存了原始 t0 值
+    csrrw t0, sscratch, t0
+
+    # 保存所有用户寄存器到 trapframe
+    sd ra,   40(t0)
+    sd sp,   48(t0)
+    sd gp,   56(t0)
+    sd tp,   64(t0)
+    sd t1,   80(t0)
+    sd t2,   88(t0)
+    sd s0,   96(t0)
+    sd s1,  104(t0)
+    sd a0,  112(t0)
+    sd a1,  120(t0)
+    sd a2,  128(t0)
+    sd a3,  136(t0)
+    sd a4,  144(t0)
+    sd a5,  152(t0)
+    sd a6,  160(t0)
+    sd a7,  168(t0)
+    sd s2,  176(t0)
+    sd s3,  184(t0)
+    sd s4,  192(t0)
+    sd s5,  200(t0)
+    sd s6,  208(t0)
+    sd s7,  216(t0)
+    sd s8,  224(t0)
+    sd s9,  232(t0)
+    sd s10, 240(t0)
+    sd s11, 248(t0)
+    sd t3,  256(t0)
+    sd t4,  264(t0)
+    sd t5,  272(t0)
+    sd t6,  280(t0)
+
+    # 保存原始 t0（被 sscratch 换出的值）
+    csrr  t1, sscratch
+    sd    t1, 72(t0)
+
+    # 保存 sepc 到 trapframe->epc
+    csrr  t1, sepc
+    sd    t1, 24(t0)
+
+    # 恢复 tp 为内核 hartid（从 trapframe->kernel_hartid）
+    ld    t1, 32(t0)
+    mv    tp, t1
+
+    # 切换到内核栈
+    ld    sp, 8(t0)
+
+    # 将 trapframe 地址存回 sscratch（供 usertrapret 使用）
+    csrw  sscratch, t0
+
+    # 调用 usertrap()（usertrap 内部会调用 usertrapret 做 sret，
+    # 所以不会返回到这里）
+    call  usertrap
+
+    # 死代码：如果 usertrap 意外返回，仍需安全返回用户态
+    csrr  t0, sscratch
+    ld    ra,   40(t0)
+    ld    sp,   48(t0)
+    ld    gp,   56(t0)
+    ld    tp,   64(t0)
+    ld    t1,   80(t0)
+    ld    t2,   88(t0)
+    ld    s0,   96(t0)
+    ld    s1,  104(t0)
+    ld    a0,  112(t0)
+    ld    a1,  120(t0)
+    ld    a2,  128(t0)
+    ld    a3,  136(t0)
+    ld    a4,  144(t0)
+    ld    a5,  152(t0)
+    ld    a6,  160(t0)
+    ld    a7,  168(t0)
+    ld    s2,  176(t0)
+    ld    s3,  184(t0)
+    ld    s4,  192(t0)
+    ld    s5,  200(t0)
+    ld    s6,  208(t0)
+    ld    s7,  216(t0)
+    ld    s8,  224(t0)
+    ld    s9,  232(t0)
+    ld    s10, 240(t0)
+    ld    s11, 248(t0)
+    ld    t3,  256(t0)
+    ld    t4,  264(t0)
+    ld    t5,  272(t0)
+    ld    t6,  280(t0)
+    ld    t0,   72(t0)
+    sret
+
+# =============================================================
+# return_to_user — 从内核返回用户态（Lab6 新增）
+#
+# 参数：a0 = trapframe 地址
+#
+# 从 trapframe 恢复所有用户寄存器，设置 sscratch = trapframe，
+# 然后执行 sret 切换到 U-Mode。
+# =============================================================
+    .globl return_to_user
+    .align 4
+return_to_user:
+    # 设置 sscratch = trapframe 地址（用户态陷入时用于定位 trapframe）
+    csrw  sscratch, a0
+
+    # 设置 sepc = trapframe->epc（sret 后 PC 跳到这里）
+    ld    t0, 24(a0)
+    csrw  sepc, t0
+
+    # 从 trapframe 恢复所有用户寄存器
+    ld    ra,   40(a0)
+    ld    sp,   48(a0)
+    ld    gp,   56(a0)
+    ld    tp,   64(a0)
+    ld    t0,   72(a0)
+    ld    t1,   80(a0)
+    ld    t2,   88(a0)
+    ld    s0,   96(a0)
+    ld    s1,  104(a0)
+    ld    a1,  120(a0)
+    ld    a2,  128(a0)
+    ld    a3,  136(a0)
+    ld    a4,  144(a0)
+    ld    a5,  152(a0)
+    ld    a6,  160(a0)
+    ld    a7,  168(a0)
+    ld    s2,  176(a0)
+    ld    s3,  184(a0)
+    ld    s4,  192(a0)
+    ld    s5,  200(a0)
+    ld    s6,  208(a0)
+    ld    s7,  216(a0)
+    ld    s8,  224(a0)
+    ld    s9,  232(a0)
+    ld    s10, 240(a0)
+    ld    s11, 248(a0)
+    ld    t3,  256(a0)
+    ld    t4,  264(a0)
+    ld    t5,  272(a0)
+    ld    t6,  280(a0)
+
+    # a0 最后恢复（因为之前用它做基地址）
+    ld    a0,  112(a0)
+
+    sret
+
+# =============================================================
 # timervec — M-Mode 时钟中断处理程序（框架提供，无需修改）
 #
 # 当 CLINT 的 mtime 超过 mtimecmp 时，CPU 跳到这里（M-Mode）。

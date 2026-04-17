@@ -76,17 +76,45 @@ SRCS = \
     kernel/trap/kernelvec.S \
     kernel/trap/trap.c \
     kernel/proc/proc.c \
-    kernel/proc/swtch.S
+    kernel/proc/swtch.S \
+    kernel/syscall/syscall.c \
+    kernel/syscall/sysproc.c
 
 KERNEL  = kernel.elf
 LDSCRIPT = kernel.ld
+
+USERBIN = user/proczero.bin
+USERCODE_H = kernel/include/usercode.h
+
+# ============================================================
+# 用户程序构建（Lab6）
+# ============================================================
+user/proczero.o: user/proczero.c
+	$(CC) $(CFLAGS) -fno-pic -mno-relax -c $< -o $@
+
+user/usys.o: user/usys.S
+	$(CC) $(CFLAGS) -c $< -o $@
+
+user/proczero.elf: user/proczero.o user/usys.o user/user.ld
+	$(LD) -T user/user.ld -o $@ user/proczero.o user/usys.o
+
+user/proczero.bin: user/proczero.elf
+	$(OBJCOPY) -O binary $< $@
+
+kernel/include/usercode.h: user/proczero.bin
+	python3 -c "\
+data = open('user/proczero.bin','rb').read();\
+f = open('kernel/include/usercode.h','w');\
+f.write('static uint8 proczero_code[] = {');\
+f.write(','.join('0x%02x'%b for b in data));\
+f.write('};\n')"
 
 # ============================================================
 # 构建目标
 # ============================================================
 all: $(KERNEL)
 
-$(KERNEL): $(SRCS) $(LDSCRIPT)
+$(KERNEL): $(SRCS) $(LDSCRIPT) $(USERCODE_H)
 	$(CC) $(CFLAGS) -T $(LDSCRIPT) $(SRCS) -o $@
 	@echo "======================================"
 	@echo " 内核编译成功：$(KERNEL)"
@@ -121,6 +149,6 @@ debug: $(KERNEL)
 
 # 清除编译产物
 clean:
-	rm -f $(KERNEL) *.o *.d
+	rm -f $(KERNEL) *.o *.d user/*.o user/*.elf user/*.bin kernel/include/usercode.h
 
 .PHONY: all run debug clean

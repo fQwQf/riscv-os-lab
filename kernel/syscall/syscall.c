@@ -25,20 +25,22 @@
 /* 获取定义长度的宏 */
 #define NELEM(x) (sizeof(x) / sizeof((x)[0]))
 
-/* ================================================================
- * TODO [Lab6-任务3-步骤1]：
- *   完善系统调用函数指针表 syscalls[]。
- *
- *   工作原理：
- *     syscalls[11] = sys_getpid
- *     当用户程序将 a7=11 并执行 ecall 时，
- *     syscall() 会调用 syscalls[11]()，即 sys_getpid()。
- *
- *   目前只实现 sys_getpid，其余留空（NULL）。
- *   后续可按需添加更多系统调用。
- * ================================================================ */
-static uint64 (*syscalls[20])(void) = {
-    /* [SYS_getpid] = sys_getpid, */ /* <-- 取消注释并添加这行 */
+/* extern 声明来自 sysproc.c 的实现函数 */
+extern uint64 sys_fork(void);
+extern uint64 sys_exit(void);
+extern uint64 sys_wait(void);
+extern uint64 sys_getpid(void);
+extern uint64 sys_sbrk(void);
+extern uint64 sys_write(void);
+
+/* 系统调用函数指针表（使用指定初始化语法）*/
+static uint64 (*syscalls[])(void) = {
+    [SYS_fork]   = sys_fork,
+    [SYS_exit]   = sys_exit,
+    [SYS_wait]   = sys_wait,
+    [SYS_getpid] = sys_getpid,
+    [SYS_sbrk]   = sys_sbrk,
+    [SYS_write]  = sys_write,
 };
 
 /* ================================================================
@@ -46,16 +48,63 @@ static uint64 (*syscalls[20])(void) = {
  * ================================================================ */
 void syscall(void) {
   struct proc *p = myproc();
-
-  /* 从陷阱帧读取系统调用号（用户在 a7 寄存器中填入的值）*/
   int num = p->trapframe->a7;
 
-  /* ================================================================
-   * TODO [Lab6-任务3-步骤2]：
-   *   1. 检查 num 是否在合法范围内（1 <= num < NELEM(syscalls)），
-   *      且 syscalls[num] 不为 NULL。
-   *   2. 若合法，调用 syscalls[num]()，
-   *      将返回值存入 p->trapframe->a0（用户程序会从 a0 读取返回值）。
-   *   3. 若非法，打印错误并将 p->trapframe->a0 = -1（返回错误码）。
-   * ================================================================ */
+  if (num > 0 && num < NELEM(syscalls) && syscalls[num]) {
+    p->trapframe->a0 = syscalls[num]();
+  } else {
+    printf("syscall: unknown syscall num=%d pid=%d\n", num, p->pid);
+    p->trapframe->a0 = -1;
+  }
+}
+
+/* ================================================================
+ * 参数提取辅助函数（Lab6 任务4）
+ *
+ * argraw(n)    — 从 trapframe 读取第 n 个参数的原始值
+ * argint(n,ip) — 读取整数参数
+ * argaddr(n,ap)— 读取地址参数
+ * argstr(n,buf,max) — 安全拷贝字符串参数
+ * ================================================================ */
+
+static uint64 argraw(int n) {
+  struct proc *p = myproc();
+  switch (n) {
+  case 0: return p->trapframe->a0;
+  case 1: return p->trapframe->a1;
+  case 2: return p->trapframe->a2;
+  case 3: return p->trapframe->a3;
+  case 4: return p->trapframe->a4;
+  case 5: return p->trapframe->a5;
+  default:
+    panic("argraw: invalid argument index");
+  }
+  return 0;
+}
+
+int argint(int n, int *ip) {
+  *ip = (int)argraw(n);
+  return 0;
+}
+
+int argaddr(int n, uint64 *ap) {
+  *ap = argraw(n);
+  return 0;
+}
+
+int argstr(int n, char *buf, int max) {
+  uint64 addr;
+  if (argaddr(n, &addr) < 0)
+    return -1;
+
+  /* 恒等映射下用户虚拟地址 = 物理地址，可直接访问 */
+  char *src = (char *)addr;
+  int i;
+  for (i = 0; i < max - 1; i++) {
+    buf[i] = src[i];
+    if (src[i] == '\0')
+      return i;
+  }
+  buf[i] = '\0';
+  return i;
 }

@@ -1,4 +1,4 @@
-/* sysproc.c — 系统调用内核实现（Lab6 任务4）
+/* sysproc.c — 系统调用内核实现（Lab6 任务5、任务7）
  *
  * 每个 sys_xxx() 函数是对应系统调用的真正内核实现。
  * 它们不接受参数（参数通过陷阱帧的寄存器传入，用 argint/argaddr 读取），
@@ -12,56 +12,47 @@
 #include "riscv.h"
 #include "types.h"
 
-/* ================================================================
- * sys_getpid — 返回当前进程的 PID
- *
- * 对应的用户接口：int getpid(void)
- *
- * 实现很简单：调用 myproc() 获取当前进程的 PCB，
- * 然后返回它的 pid 字段。
- * ================================================================ */
 uint64 sys_getpid(void) {
-  /* ================================================================
-   * TODO [Lab6-任务4-步骤1]：
-   *   调用 myproc() 获取当前进程的 PCB 指针，返回其 pid 字段。
-   * ================================================================ */
-  return -1; /* 删除这行，替换为正确逻辑 */
+  return myproc()->pid;
 }
 
-/* ================================================================
- * sys_exit (Lab6 扩展)
- *   实现进程退出。简化版：打印退出信息，将进程状态设为 TASK_ZOMBIE，然后切回调度器。
- * ================================================================ */
 uint64 sys_exit(void) {
-  /* ================================================================
-   * TODO [Lab6-任务4-步骤2（可选）]：
-   *   实现进程退出。简化版：打印退出信息，将进程状态设为 ZOMBIE，然后切回调度器。
-   * ================================================================ */
-  panic("sys_exit: not implemented");
+  int n;
+  argint(0, &n);
+  exit(n);
   return 0;
 }
 
-/* ================================================================
- * sys_write — 向文件描述符写数据
- *
- * 用户接口：int write(int fd, const void *buf, int count)
- * 参数从陷阱帧读取：
- *   fd    = trapframe->a0
- *   buf   = trapframe->a1（用户虚拟地址，不能直接在内核读！）
- *   count = trapframe->a2
- *
- * 简化版：如果 fd==1（标准输出），直接把字符打印到串口。
- * ================================================================ */
 uint64 sys_write(void) {
-  /* ================================================================
-   * TODO [Lab6-任务4-步骤3（进阶）]：
-   *   实现简化版 sys_write：
-   *   1. int fd = myproc()->trapframe->a0;
-   *   2. 获取出参 n（系统调用的第一个参数，可用 argint 拿取），并赋给 p->xstate
-   *   3. 打印类似 "Process [pid] exited with code [n]\n"
-   *   4. 设置 p->status = TASK_ZOMBIE
-   *   5. 调用 swtch 切回调度器：swtch(&p->context, &mycpu()->context);
-   * ================================================================ */
-  panic("sys_write: not implemented");
+  int fd;
+  uint64 buf_addr;
+  int n;
+
+  argint(0, &fd);
+  argaddr(1, &buf_addr);
+  argint(2, &n);
+
+  if (fd != 1)
+    return -1;
+
+  /* 恒等映射下可直接访问用户缓冲区 */
+  char *buf = (char *)buf_addr;
+  for (int i = 0; i < n; i++) {
+    uart_putc(buf[i]);
+  }
+  return n;
+}
+
+uint64 sys_fork(void) {
+  return fork();
+}
+
+uint64 sys_wait(void) {
+  uint64 p;
+  argaddr(0, &p);
+  return wait(p);
+}
+
+uint64 sys_sbrk(void) {
   return -1;
 }

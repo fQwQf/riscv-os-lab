@@ -40,16 +40,23 @@ exit:
     ecall
     ret
 
-/* ================================================================
- * TODO [Lab6-任务1]：
- *   仿照上面的 getpid，实现 write 系统调用的汇编桩。
- *   write 的系统调用号是 SYS_write（16）。
- *   参数由 C 调用约定自动放在 a0, a1, a2 中，无需手动设置。
- *
- *   格式：
- *     .global write
- *   write:
- *     li a7, SYS_write
- *     ecall
- *     ret
- * ================================================================ */
+/* write — 向文件描述符写数据 */
+    .global write
+write:
+    li a7, SYS_write
+    ecall
+    ret
+
+/* fork — 创建子进程 */
+    .global fork
+fork:
+    li a7, SYS_fork
+    ecall
+    ret
+
+/* wait — 等待子进程退出 */
+    .global wait
+wait:
+    li a7, SYS_wait
+    ecall
+    ret
