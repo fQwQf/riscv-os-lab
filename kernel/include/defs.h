@@ -108,7 +108,6 @@ uint64 sys_exit(void);
 uint64 sys_fork(void);
 uint64 sys_wait(void);
 uint64 sys_sbrk(void);
-uint64 sys_write(void);
 
 /* ======================================================
  * Lab6 新增：进程生命周期（fork/exit/wait）
@@ -128,6 +127,14 @@ void bwrite(struct buf *b);
 void brelse(struct buf *b);
 
 /* ======================================================
+ * virtio 磁盘驱动
+ * 文件：kernel/driver/virtio_disk.c
+ * ====================================================== */
+void virtio_disk_init(void);
+
+struct file;
+
+/* ======================================================
  * Lab7 新增：文件系统核心
  * 文件：kernel/fs/fs.c
  * ====================================================== */
@@ -136,5 +143,31 @@ struct inode *iget(uint dev, uint inum);
 struct inode *dirlookup(struct inode *dp, char *name, uint *poff);
 int readi(struct inode *ip, int user_dst, uint64 dst, uint off, uint n);
 int writei(struct inode *ip, int user_src, uint64 src, uint off, uint n);
+struct inode *ialloc(uint dev, short type);
+void ilock(struct inode *ip);
+void iunlock(struct inode *ip);
+void iput(struct inode *ip);
+void iupdate(struct inode *ip);
+int dirlink(struct inode *dp, char *name, uint inum);
+struct inode *namei(char *path);
+struct inode *nameiparent(char *path, char *name);
+
+/* ======================================================
+ * Lab7 新增：文件系统相关
+ * 文件：kernel/fs/file.c
+ * ====================================================== */
+struct file *filealloc(void);
+struct file *filedup(struct file *f);
+void fileclose(struct file *f);
+int fileread(struct file *f, uint64 addr, int n);
+int filewrite(struct file *f, uint64 addr, int n);
+
+/* ======================================================
+ * Lab7 新增：系统调用相关
+ * ====================================================== */
+uint64 sys_open(void);
+uint64 sys_read(void);
+uint64 sys_write(void);
+uint64 sys_close(void);
 
 #endif /* DEFS_H */

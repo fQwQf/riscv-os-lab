@@ -21,6 +21,7 @@
 
 #include "defs.h"
 #include "riscv.h"
+#include "param.h"
 
 void start_main() {
   clear_screen();
@@ -46,6 +47,9 @@ void start_main() {
   printf("Paging enabled! Interrupts on.\n");
 
   procinit();
+  binit();
+  virtio_disk_init();
+  fsinit(ROOTDEV);
   userinit();
   scheduler();
 }

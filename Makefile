@@ -78,10 +78,17 @@ SRCS = \
     kernel/proc/proc.c \
     kernel/proc/swtch.S \
     kernel/syscall/syscall.c \
-    kernel/syscall/sysproc.c
+    kernel/syscall/sysproc.c \
+    kernel/fs/bio.c \
+    kernel/fs/fs.c \
+    kernel/fs/file.c \
+    kernel/syscall/sysfile.c \
+    kernel/driver/virtio_disk.c
 
 KERNEL  = kernel.elf
+FSDISK  = fs.img
 LDSCRIPT = kernel.ld
+MKFS    = mkfs/mkfs
 
 USERBIN = user/proczero.bin
 USERCODE_H = kernel/include/usercode.h
@@ -122,20 +129,24 @@ $(KERNEL): $(SRCS) $(LDSCRIPT) $(USERCODE_H)
 	@echo "======================================"
 
 # 在 QEMU 中运行内核
-run: $(KERNEL)
+run: $(KERNEL) $(FSDISK)
 	qemu-system-riscv64 \
 	    -machine virt \
 	    -bios none \
 	    -kernel $(KERNEL) \
+	    -drive file=$(FSDISK),if=none,format=raw,id=x0 \
+	    -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0 \
 	    -nographic
 	# 退出 QEMU：按 Ctrl+A，然后按 X
 
 # 启动 QEMU 并暂停，等待 GDB 连接（调试模式）
-debug: $(KERNEL)
+debug: $(KERNEL) $(FSDISK)
 	qemu-system-riscv64 \
 	    -machine virt \
 	    -bios none \
 	    -kernel $(KERNEL) \
+	    -drive file=$(FSDISK),if=none,format=raw,id=x0 \
+	    -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0 \
 	    -nographic \
 	    -s -S &
 	@echo ""
@@ -149,6 +160,16 @@ debug: $(KERNEL)
 
 # 清除编译产物
 clean:
-	rm -f $(KERNEL) *.o *.d user/*.o user/*.elf user/*.bin kernel/include/usercode.h
+	rm -f $(KERNEL) *.o *.d user/*.o user/*.elf user/*.bin kernel/include/usercode.h $(FSDISK)
+	rm -f mkfs/mkfs
 
 .PHONY: all run debug clean
+
+# ============================================================
+# 文件系统磁盘镜像
+# ============================================================
+mkfs/mkfs: mkfs/mkfs.c kernel/include/fs.h
+	gcc -o $@ -I kernel/include $<
+
+$(FSDISK): mkfs/mkfs
+	$(MKFS) $(FSDISK) 1000

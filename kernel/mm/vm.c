@@ -169,6 +169,9 @@ void kvmininit(void) {
   /* Lab4 进阶：映射 PLIC 中断控制器（0x0c000000 ~ 0x10000000）*/
   mappages(kernel_pagetable, PLIC, PLIC, 0x400000, PTE_R | PTE_W);
 
+  /* Lab7 新增：映射 Virtio 磁盘设备（MMIO 区域）*/
+  mappages(kernel_pagetable, VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
+
   /* ================================================================
    * TODO [Lab3-任务4-步骤2]：
    *   映射内核代码段：从 KERNBASE 到 etext。

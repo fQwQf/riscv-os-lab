@@ -23,25 +23,7 @@ uint64 sys_exit(void) {
   return 0;
 }
 
-uint64 sys_write(void) {
-  int fd;
-  uint64 buf_addr;
-  int n;
 
-  argint(0, &fd);
-  argaddr(1, &buf_addr);
-  argint(2, &n);
-
-  if (fd != 1)
-    return -1;
-
-  /* 恒等映射下可直接访问用户缓冲区 */
-  char *buf = (char *)buf_addr;
-  for (int i = 0; i < n; i++) {
-    uart_putc(buf[i]);
-  }
-  return n;
-}
 
 uint64 sys_fork(void) {
   return fork();

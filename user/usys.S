@@ -18,6 +18,9 @@
 #define SYS_getpid  11
 #define SYS_sbrk    12
 #define SYS_write   16
+#define SYS_open    15
+#define SYS_read    13
+#define SYS_close   17
 
 /* ================================================================
  * TODO [Lab6-任务1]：
@@ -58,5 +61,26 @@ fork:
     .global wait
 wait:
     li a7, SYS_wait
+    ecall
+    ret
+
+/* open — 打开或创建文件 */
+    .global open
+open:
+    li a7, SYS_open
+    ecall
+    ret
+
+/* read — 从文件读数据 */
+    .global read
+read:
+    li a7, SYS_read
+    ecall
+    ret
+
+/* close — 关闭文件描述符 */
+    .global close
+close:
+    li a7, SYS_close
     ecall
     ret
